@@ -288,6 +288,7 @@ Sys::Sys(
   logical_topologies["DBT"] = new DoubleBinaryTreeTopology(
       id, hor, id % loc, loc, loc); // horizontal_dim,id%local_dim,local_dim);
   logical_topologies["Torus3D"] = new Torus3D(id, total_nodes, loc, ver);
+  logical_topologies["OneRing"] = new Torus3D(id, total_nodes, 1, 1);
   logical_topologies["LocalRingNodeA2AGlobalDBT"] =
       new LocalRingNodeA2AGlobalDBT(id, ver, id % (hor * loc), hor * loc, 1);
   stream_counter = 0;
@@ -1260,8 +1261,8 @@ DataSet* Sys::generate_hierarchical_all_to_all(
     if (id == 0) {
       // std::cout<<"initial chunk: "<<tmp<<std::endl;
     }
-    if (local_dim > 1 && local_run) {
-      LogicalTopology* torus = logical_topologies["Torus3D"]->get_topology();
+    if (local_dim > 1 && local_run && collectiveImplementation!=CollectiveImplementation::HierarchicalRing) {
+        LogicalTopology* torus = logical_topologies["Torus3D"]->get_topology();
       CollectivePhase vn(
           this,
           local_last.first,
@@ -1281,7 +1282,7 @@ DataSet* Sys::generate_hierarchical_all_to_all(
     if (id == 0) {
       // std::cout<<"tmp after phase 1: "<<tmp<<std::endl;
     }
-    if (vertical_dim > 1 && vertical_run) {
+    if (vertical_dim > 1 && vertical_run && collectiveImplementation!=CollectiveImplementation::HierarchicalRing) {
       LogicalTopology* torus = logical_topologies["Torus3D"]->get_topology();
       CollectivePhase vn(
           this,
@@ -1302,23 +1303,44 @@ DataSet* Sys::generate_hierarchical_all_to_all(
     if (id == 0) {
       // std::cout<<"tmp after phase 2: "<<tmp<<std::endl;
     }
-    if (horizontal_dim > 1 && horizontal_run) {
-      LogicalTopology* torus = logical_topologies["Torus3D"]->get_topology();
-      CollectivePhase vn(
-          this,
-          horizontal.first,
-          new Ring(
-              ComType::All_to_All,
-              id,
-              layer,
-              ((Torus3D*)torus)->horizontal_dimension,
-              tmp,
-              horizontal.second,
-              alltoall_routing,
-              InjectionPolicy::Normal,
-              boost_mode));
-      vect.push_back(vn);
-      tmp = vn.final_data_size;
+    if ((horizontal_dim > 1 || collectiveImplementation==CollectiveImplementation::HierarchicalRing) && horizontal_run) {
+        LogicalTopology* torus =NULL;
+        if(collectiveImplementation!=CollectiveImplementation::HierarchicalRing){
+            torus=logical_topologies["Torus3D"]->get_topology();
+            CollectivePhase vn(
+                    this,
+                    horizontal.first,
+                    new Ring(
+                            ComType::All_to_All,
+                            id,
+                            layer,
+                            ((Torus3D*)torus)->horizontal_dimension,
+                            tmp,
+                            horizontal.second,
+                            alltoall_routing,
+                            InjectionPolicy::Normal,
+                            boost_mode));
+            vect.push_back(vn);
+            tmp = vn.final_data_size;
+        }
+        else{
+            torus=logical_topologies["OneRing"]->get_topology();
+            CollectivePhase vn(
+                    this,
+                    horizontal.first,
+                    new AllToAll(
+                            ComType::All_to_All,
+                            id,
+                            layer,
+                            ((Torus3D*)torus)->horizontal_dimension,
+                            tmp,
+                            horizontal.second,
+                            PacketRouting::Hardware,
+                            InjectionPolicy::Normal,
+                            boost_mode));
+            vect.push_back(vn);
+            tmp = vn.final_data_size;
+        }
     }
     if (id == 0) {
       // std::cout<<"tmp after phase 3: "<<tmp<<std::endl;
